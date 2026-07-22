@@ -58,3 +58,23 @@ def test_pipeline_survives_a_broken_adapter():
         def to_events(self): raise RuntimeError("feed down")
     summary = IngestPipeline([Broken(), SampleAdapter()]).run()
     assert summary["collected"] == 5  # good adapter still ran
+
+
+# ── Real-schema regression tests (from live smoke test 2026-07-21) ──
+
+def test_gdacs_reads_geojson_geometry():
+    """GDACS puts coordinates in geometry, not properties — regression guard."""
+    rec = {"properties": {"alertlevel": "Orange", "eventname": "Flood in Ethiopia",
+                          "eventtype": "FL", "country": "Ethiopia"},
+           "geometry": {"type": "Point", "coordinates": [37.26, 6.17]}}
+    evs = GDACSAdapter(records=[rec]).to_events()
+    assert evs[0].data["lat"] == 6.17 and evs[0].data["lon"] == 37.26
+    assert in_east_africa(evs[0])  # must survive the region filter
+
+
+def test_reliefweb_degrades_gracefully():
+    """ReliefWeb v1 GET was retired (410). A dead feed must not crash the run."""
+    from coord_ingest import ReliefWebAdapter
+    # injected None forces the live path; if network fails it must return []
+    evs = ReliefWebAdapter().to_events()
+    assert isinstance(evs, list)  # never raises

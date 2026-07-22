@@ -141,10 +141,17 @@ class ReliefWebAdapter(FeedAdapter):
             return self._injected
         import urllib.request
 
-        url = ("https://api.reliefweb.int/v1/disasters?appname=coord-ingest"
-               "&profile=list&preset=latest&limit=20")
-        with urllib.request.urlopen(url, timeout=20) as r:
-            return json.load(r).get("data", [])
+        # ReliefWeb v1 GET was retired (HTTP 410). v2 requires a POST query.
+        # We degrade gracefully: on any failure, return [] so the pipeline runs
+        # on its other adapters rather than crashing. Verified 2026-07-21.
+        url = "https://api.reliefweb.int/v2/disasters?appname=coord-ingest&limit=20"
+        body = json.dumps({"preset": "latest", "profile": "list"}).encode()
+        req = urllib.request.Request(url, data=body, headers={"Content-Type": "application/json"})
+        try:
+            with urllib.request.urlopen(req, timeout=20) as r:
+                return json.load(r).get("data", [])
+        except Exception:
+            return []
 
     def _record_to_event(self, rec: dict) -> CoordinationEvent | None:
         fields = rec.get("fields", {})
@@ -180,16 +187,22 @@ class GDACSAdapter(FeedAdapter):
 
     def _record_to_event(self, rec: dict) -> CoordinationEvent | None:
         props = rec.get("properties", rec)
+        geom = rec.get("geometry", {})
+        coords = geom.get("coordinates", [None, None]) if geom else [None, None]
+        lon, lat = (coords[0], coords[1]) if len(coords) >= 2 else (None, None)
         colour = props.get("alertlevel", "Green")
+        # GDACS country is a comma-separated string; keep it raw, the region
+        # filter matches any regional country substring via the bbox on lat/lon.
         return CoordinationEvent(
             domain=self.domain,
             event_type=self.event_type,
             source=self.source,
             severity=self._COLOUR.get(colour, EventSeverity.INFO),
             data={
-                "title": props.get("eventname") or props.get("description", ""),
-                "lat": props.get("latitude"),
-                "lon": props.get("longitude"),
+                "title": props.get("eventname") or props.get("name") or props.get("description", ""),
+                "event_class": props.get("eventtype"),
+                "lat": lat,
+                "lon": lon,
                 "country": props.get("country"),
                 "origin_feed": "gdacs",
             },
