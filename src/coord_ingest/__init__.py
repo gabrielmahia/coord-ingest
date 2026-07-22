@@ -33,6 +33,7 @@ from .adapters import (
     USGSQuakeAdapter,
     ReliefWebAdapter,
     GDACSAdapter,
+    OpenMeteoAdapter,
 )
 from .pipeline import IngestPipeline, EAST_AFRICA_BBOX, in_east_africa
 
@@ -44,6 +45,7 @@ __all__ = [
     "USGSQuakeAdapter",
     "ReliefWebAdapter",
     "GDACSAdapter",
+    "OpenMeteoAdapter",
     "IngestPipeline",
     "EAST_AFRICA_BBOX",
     "in_east_africa",

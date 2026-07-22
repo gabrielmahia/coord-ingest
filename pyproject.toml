@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "coord-ingest"
-version = "0.1.1"
+version = "0.2.0"
 description = "Turn open world-signal feeds (quakes, disasters, outbreaks) into africa-coord-bus coordination events — East Africa scoped, MIT, no API keys."
 readme = "README.md"
 requires-python = ">=3.10"
