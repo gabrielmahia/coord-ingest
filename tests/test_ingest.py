@@ -78,3 +78,40 @@ def test_reliefweb_degrades_gracefully():
     # injected None forces the live path; if network fails it must return []
     evs = ReliefWebAdapter().to_events()
     assert isinstance(evs, list)  # never raises
+
+
+# ── Open-Meteo adapter (the upstream weather-signal rail) ──
+
+def test_openmeteo_drought_signal():
+    from coord_ingest import OpenMeteoAdapter
+    rec = [{"name": "Dry", "lat": -1.0, "lon": 36.0, "country": "Kenya",
+            "precip": [0.1, 0, 0.2, 0, 0, 0, 0]}]
+    evs = OpenMeteoAdapter(records=rec).to_events()
+    assert evs[0].event_type == "drought_alert"
+    assert evs[0].severity == EventSeverity.ALERT  # <1mm total
+
+
+def test_openmeteo_flood_signal():
+    from coord_ingest import OpenMeteoAdapter
+    rec = [{"name": "Wet", "lat": -6.0, "lon": 38.0, "country": "Tanzania",
+            "precip": [5, 60, 10, 2, 0, 1, 0]}]
+    evs = OpenMeteoAdapter(records=rec).to_events()
+    assert evs[0].event_type == "flood_alert"
+
+
+def test_openmeteo_normal_emits_nothing():
+    from coord_ingest import OpenMeteoAdapter
+    rec = [{"name": "OK", "lat": 0.0, "lon": 34.0, "country": "Kenya",
+            "precip": [8, 12, 6, 9, 7, 10, 5]}]
+    assert OpenMeteoAdapter(records=rec).to_events() == []
+
+
+def test_openmeteo_events_cascade():
+    """A weather-derived drought must fire the real routing cascade."""
+    from coord_ingest import OpenMeteoAdapter
+    from africa_coord_bus import KENYA_ROUTING_TABLE
+    rec = [{"name": "Turkana", "lat": 3.1, "lon": 35.6, "country": "Kenya",
+            "precip": [0, 0, 0, 0, 0, 0, 0]}]
+    ev = OpenMeteoAdapter(records=rec).to_events()[0]
+    fired = [r.name for r in KENYA_ROUTING_TABLE if r.matches(ev)]
+    assert "drought→parametric_insurance" in fired

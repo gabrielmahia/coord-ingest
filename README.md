@@ -8,7 +8,7 @@ It ingests and normalizes; the bus routes. Clean separation, composable rails.
 
 ## What it does
 
-- **Adapters** for public sources — USGS earthquakes, ReliefWeb disasters, GDACS alerts — each mapping raw records to typed `CoordinationEvent`s. Add a feed by adding an adapter.
+- **Adapters** for public sources — Open-Meteo rainfall (drought/flood signals), USGS earthquakes, GDACS disaster alerts — each mapping raw records to typed `CoordinationEvent`s. Add a feed by adding an adapter.
 - **East-Africa filter** — a signal becomes an event only if it lands in the regional bounding box or names a regional country. Global noise is dropped at ingest.
 - **Offline-capable** — ships with a `SampleAdapter` over bundled fixtures, so the full pipeline (and its tests) run with no network and no API keys.
 - **Feeds the bus, doesn't replace it** — routing, cascading, and cross-border logic stay in `africa-coord-bus`.
@@ -28,7 +28,7 @@ print(summary["collected"], "East Africa events")   # global noise already dropp
 print(summary["by_domain"])                          # {'water': 3, 'health': 1, 'transport': 1}
 
 # With live feeds + the bus:
-# from coord_ingest import USGSQuakeAdapter, GDACSAdapter
+# from coord_ingest import OpenMeteoAdapter, USGSQuakeAdapter, GDACSAdapter
 # from africa_coord_bus import EventBus
 # IngestPipeline([USGSQuakeAdapter(), GDACSAdapter()]).run(bus=EventBus(...))
 ```

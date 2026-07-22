@@ -207,3 +207,87 @@ class GDACSAdapter(FeedAdapter):
                 "origin_feed": "gdacs",
             },
         )
+
+class OpenMeteoAdapter(FeedAdapter):
+    """Open-Meteo forecast (public, key-free, CORS-friendly). Converts rainfall
+    forecasts into drought/flood coordination events for monitored locations.
+
+    This is the *upstream* adapter: drought and flood cascades all begin with a
+    rainfall signal, and Open-Meteo provides it globally with no key. Monitored
+    points default to East African population/agricultural centres; pass your own
+    ``locations`` as (name, lat, lon, country) tuples to watch different places.
+
+    Thresholds are deliberately simple and documented, not black-box:
+      - 7-day precip < DROUGHT_MM  -> drought_alert (severity by how dry)
+      - any day       > FLOOD_MM   -> flood_alert   (severity by peak)
+    Tune for local seasonality before operational use.
+    """
+
+    domain = EventDomain.WATER
+    source = "coord-ingest.openmeteo"
+
+    DROUGHT_MM = 5.0    # 7-day total below this in a rainy period = drought signal
+    FLOOD_MM = 50.0     # single-day total above this = flood signal
+
+    DEFAULT_LOCATIONS = [
+        ("Nairobi", -1.29, 36.82, "Kenya"),
+        ("Turkana", 3.12, 35.60, "Kenya"),
+        ("Dodoma", -6.16, 35.75, "Tanzania"),
+        ("Dire Dawa", 9.59, 41.86, "Ethiopia"),
+        ("Juba", 4.85, 31.58, "South Sudan"),
+    ]
+
+    def __init__(self, locations=None, records=None):
+        self.locations = locations or self.DEFAULT_LOCATIONS
+        self._injected = records
+
+    def fetch(self) -> list[dict]:
+        if self._injected is not None:
+            return self._injected
+        import urllib.request
+
+        out = []
+        for name, lat, lon, country in self.locations:
+            url = (f"https://api.open-meteo.com/v1/forecast?latitude={lat}"
+                   f"&longitude={lon}&daily=precipitation_sum&forecast_days=7"
+                   f"&timezone=auto")
+            try:
+                with urllib.request.urlopen(url, timeout=20) as r:
+                    d = json.load(r)
+                precip = [p for p in d.get("daily", {}).get("precipitation_sum", []) if p is not None]
+                out.append({"name": name, "lat": lat, "lon": lon,
+                            "country": country, "precip": precip})
+            except Exception:
+                continue  # one location failing must not sink the rest
+        return out
+
+    def _record_to_event(self, rec: dict) -> CoordinationEvent | None:
+        precip = rec.get("precip", [])
+        if not precip:
+            return None
+        total = sum(precip)
+        peak = max(precip)
+
+        if peak >= self.FLOOD_MM:
+            sev = EventSeverity.CRITICAL if peak >= 100 else EventSeverity.ALERT
+            etype, note = "flood_alert", f"peak {peak:.0f}mm/day"
+        elif total < self.DROUGHT_MM:
+            sev = EventSeverity.ALERT if total < 1.0 else EventSeverity.WARNING
+            etype, note = "drought_alert", f"7-day total {total:.1f}mm"
+        else:
+            return None  # normal conditions -> no event
+
+        return CoordinationEvent(
+            domain=EventDomain.WATER,
+            event_type=etype,
+            source=self.source,
+            severity=sev,
+            data={
+                "title": f"{rec['name']}: {note}",
+                "lat": rec.get("lat"),
+                "lon": rec.get("lon"),
+                "country": rec.get("country"),
+                "precip_7d_mm": round(total, 1),
+                "origin_feed": "open-meteo",
+            },
+        )
