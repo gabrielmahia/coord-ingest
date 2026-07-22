@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=77", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "coord-ingest"
+version = "0.1.0"
+description = "Turn open world-signal feeds (quakes, disasters, outbreaks) into africa-coord-bus coordination events — East Africa scoped, MIT, no API keys."
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{name = "AfriKaziOS maintainers"}]
+keywords = ["osint","east-africa","coordination","mcp","early-warning","feeds"]
+dependencies = ["africa-coord-bus>=0.2.0"]
+
+[project.urls]
+Homepage = "https://github.com/gabrielmahia/coord-ingest"
+Repository = "https://github.com/gabrielmahia/coord-ingest"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+packages = ["coord_ingest"]
+
+[tool.setuptools.package-data]
+coord_ingest = ["data/*.json"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
