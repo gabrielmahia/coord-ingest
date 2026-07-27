@@ -34,10 +34,11 @@ from .adapters import (
     ReliefWebAdapter,
     GDACSAdapter,
     OpenMeteoAdapter,
+    HDXAdapter,
 )
 from .pipeline import IngestPipeline, EAST_AFRICA_BBOX, in_east_africa
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 
 __all__ = [
     "FeedAdapter",
@@ -46,6 +47,7 @@ __all__ = [
     "ReliefWebAdapter",
     "GDACSAdapter",
     "OpenMeteoAdapter",
+    "HDXAdapter",
     "IngestPipeline",
     "EAST_AFRICA_BBOX",
     "in_east_africa",
