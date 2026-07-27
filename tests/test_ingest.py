@@ -183,3 +183,43 @@ def test_hdx_unreachable_degrades_to_empty():
             raise RuntimeError("network down")
     # to_events calls fetch(); pipeline swallows adapter errors -> empty, no crash
     assert IngestPipeline([_Broken()]).collect() == []
+
+
+# --- Kobo/ODK field-report adapter (offline mapping tests only) ---------------
+from coord_ingest import KoboAdapter  # noqa: E402
+
+_KOBO_SUBMISSIONS = [
+    {
+        "title": "Borehole dry - Marsabit ward",
+        "_geolocation": [2.33, 37.98],          # Marsabit, Kenya (in EA bbox)
+        "_submission_time": "2026-07-27T09:00:00",
+    },
+    {
+        "title": "Test entry - Berlin",
+        "_geolocation": [52.52, 13.40],          # outside region -> dropped
+        "_submission_time": "2026-07-27T09:05:00",
+    },
+]
+
+
+def test_kobo_maps_geolocation_and_domain():
+    evs = KoboAdapter(asset_uid="aXYZ", domain=EventDomain.WATER,
+                      records=_KOBO_SUBMISSIONS).to_events()
+    assert len(evs) == 2
+    dry = evs[0]
+    assert dry.domain == EventDomain.WATER
+    assert dry.event_type == "field_report"
+    assert dry.data["lat"] == 2.33 and dry.data["lon"] == 37.98
+    assert dry.data["origin_feed"] == "kobo"
+
+
+def test_kobo_region_filter_drops_out_of_area_submissions():
+    kept = IngestPipeline([KoboAdapter(asset_uid="aXYZ", domain=EventDomain.WATER,
+                                       records=_KOBO_SUBMISSIONS)]).collect()
+    assert len(kept) == 1                        # Berlin dropped by bbox
+    assert "Marsabit" in kept[0].data["title"]
+
+
+def test_kobo_no_token_or_form_degrades_to_empty():
+    # no injected records, no asset_uid, no token -> fetch returns [] (no crash)
+    assert KoboAdapter().to_events() == []
