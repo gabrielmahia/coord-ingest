@@ -393,3 +393,89 @@ class HDXAdapter(FeedAdapter):
                 "origin_feed": "hdx",
             },
         )
+
+
+class KoboAdapter(FeedAdapter):
+    """KoboToolbox / ODK field submissions -> CoordinationEvents.
+
+    The other adapters carry *top-down* signals (agency datasets, satellites,
+    seismographs). This one carries *bottom-up* ground truth: a community health
+    volunteer logging a cholera case, a water committee reporting a dry borehole,
+    an extension officer flagging armyworm. KoboToolbox (and ODK Central) are the
+    dominant field-data tools across East African NGOs and ministries, so this is
+    the rail that lets citizen/field reports cascade on the same bus as the
+    automated feeds.
+
+    Config, because form schemas vary:
+      - ``asset_uid``  : the Kobo asset/form id
+      - ``domain``     : the bus domain this form maps to (a water-point form is
+                         WATER; a clinic form is HEALTH)
+      - ``title_field``: submission field used as the human-readable title
+      - ``country_field`` (optional): field naming the country; else geo is used
+    Geolocation is read from Kobo's ``_geolocation`` ([lat, lon]); the pipeline's
+    bounding-box filter keeps it region-scoped.
+
+    NOTE ON VERIFICATION: the mapping logic is unit-tested with injected
+    submissions. The live network path (auth'd GET against a real form) is NOT
+    smoke-tested in this package because it requires a private token + a live
+    form. Verify against your own Kobo/ODK server before operational use.
+    """
+
+    event_type = "field_report"
+    source = "coord-ingest.kobo"
+
+    def __init__(
+        self,
+        asset_uid: str = "",
+        domain: EventDomain = EventDomain.CIVIC,
+        *,
+        title_field: str = "title",
+        country_field: str | None = None,
+        base_url: str = "https://kf.kobotoolbox.org",
+        token_env: str = "KOBO_API_TOKEN",
+        records: list[dict] | None = None,
+    ):
+        self.asset_uid = asset_uid
+        self.domain = domain
+        self.title_field = title_field
+        self.country_field = country_field
+        self.base_url = base_url.rstrip("/")
+        self.token_env = token_env
+        self._injected = records
+
+    def fetch(self) -> list[dict]:
+        if self._injected is not None:
+            return self._injected
+        import os
+        import urllib.request
+
+        token = os.environ.get(self.token_env)
+        if not token or not self.asset_uid:
+            return []  # no creds/form -> nothing to ingest, don't crash the run
+        url = f"{self.base_url}/api/v2/assets/{self.asset_uid}/data/?format=json"
+        req = urllib.request.Request(url, headers={"Authorization": f"Token {token}"})
+        try:
+            with urllib.request.urlopen(req, timeout=20) as r:
+                return json.load(r).get("results", [])
+        except Exception:
+            return []  # unreachable/expired token -> degrade, run other adapters
+
+    def _record_to_event(self, rec: dict) -> CoordinationEvent | None:
+        geo = rec.get("_geolocation") or [None, None]
+        lat, lon = (geo + [None, None])[:2] if isinstance(geo, list) else (None, None)
+        country = rec.get(self.country_field) if self.country_field else None
+        return CoordinationEvent(
+            domain=self.domain,
+            event_type=self.event_type,
+            source=self.source,
+            severity=EventSeverity.WARNING,
+            data={
+                "title": rec.get(self.title_field, ""),
+                "lat": lat,
+                "lon": lon,
+                "country": country,
+                "submitted": rec.get("_submission_time"),
+                "asset_uid": self.asset_uid,
+                "origin_feed": "kobo",
+            },
+        )

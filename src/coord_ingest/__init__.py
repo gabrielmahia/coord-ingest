@@ -35,6 +35,7 @@ from .adapters import (
     GDACSAdapter,
     OpenMeteoAdapter,
     HDXAdapter,
+    KoboAdapter,
 )
 from .pipeline import IngestPipeline, EAST_AFRICA_BBOX, in_east_africa
 
@@ -48,6 +49,7 @@ __all__ = [
     "GDACSAdapter",
     "OpenMeteoAdapter",
     "HDXAdapter",
+    "KoboAdapter",
     "IngestPipeline",
     "EAST_AFRICA_BBOX",
     "in_east_africa",
