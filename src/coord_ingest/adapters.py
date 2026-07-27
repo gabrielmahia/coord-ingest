@@ -291,3 +291,105 @@ class OpenMeteoAdapter(FeedAdapter):
                 "origin_feed": "open-meteo",
             },
         )
+
+
+class HDXAdapter(FeedAdapter):
+    """Humanitarian Data Exchange (HDX) — OCHA's open dataset registry, served
+    over a public, key-free CKAN API. This adapter surfaces *newly published or
+    updated* humanitarian datasets for East Africa as coordination signals: a
+    data-availability event ("IOM published new drought-displacement figures for
+    Kenya") telling the bus that fresh ground-truth exists to pull into
+    advisories, water testing, or cross-border coordination.
+
+    Unlike the quake/rainfall adapters (point-in-time physical signals), HDX
+    events mark *information availability*, so default severity is WARNING and
+    lifts only when crisis keywords (drought, flood, cholera, outbreak,
+    displacement) appear in the title or tags. The bus decides what to do with
+    the signal; this adapter only normalizes it.
+
+    HDX 'groups' are ISO3 country slugs, so region membership is exact here — no
+    bounding-box guessing. Datasets outside the East-Africa set carry country
+    ``None`` and are dropped by the pipeline's region filter.
+    """
+
+    domain = EventDomain.CIVIC
+    event_type = "humanitarian_dataset"
+    source = "coord-ingest.hdx"
+
+    EAST_AFRICA_ISO3 = {
+        "ken": "Kenya", "tza": "Tanzania", "eth": "Ethiopia", "uga": "Uganda",
+        "ssd": "South Sudan", "som": "Somalia", "rwa": "Rwanda", "bdi": "Burundi",
+    }
+    # crisis keyword -> (domain, severity floor); most specific signal wins
+    _CRISIS = {
+        "drought": (EventDomain.WATER, EventSeverity.ALERT),
+        "flood": (EventDomain.WATER, EventSeverity.ALERT),
+        "cholera": (EventDomain.HEALTH, EventSeverity.ALERT),
+        "outbreak": (EventDomain.HEALTH, EventSeverity.ALERT),
+        "displacement": (EventDomain.CIVIC, EventSeverity.WARNING),
+        "food security": (EventDomain.AGRICULTURE, EventSeverity.WARNING),
+        "nutrition": (EventDomain.HEALTH, EventSeverity.WARNING),
+    }
+    API = "https://data.humdata.org/api/3/action/package_search"
+    _ORDER = list(EventSeverity)  # info < warning < alert < critical (definition order)
+
+    def __init__(self, records: list[dict] | None = None, rows: int = 25):
+        # inject records to test without network; rows caps live query size
+        self._injected = records
+        self.rows = rows
+
+    def fetch(self) -> list[dict]:
+        if self._injected is not None:
+            return self._injected
+        import urllib.parse
+        import urllib.request
+
+        fq = "groups:(" + " OR ".join(self.EAST_AFRICA_ISO3) + ")"
+        qs = urllib.parse.urlencode(
+            {"fq": fq, "sort": "metadata_modified desc", "rows": self.rows}
+        )
+        try:
+            with urllib.request.urlopen(f"{self.API}?{qs}", timeout=20) as r:
+                return json.load(r).get("result", {}).get("results", [])
+        except Exception:
+            return []  # HDX unreachable -> pipeline runs on its other adapters
+
+    def _classify(self, rec: dict) -> tuple[EventDomain, EventSeverity]:
+        haystack = (
+            (rec.get("title", "") or "") + " "
+            + " ".join(t.get("name", "") for t in rec.get("tags", []))
+        ).lower()
+        # When several crisis keywords match, the highest-severity signal owns
+        # the domain (ties broken by definition order). This keeps a drought +
+        # food-security dataset classified as the more acute water signal rather
+        # than whichever keyword happened to be checked last.
+        domain, sev = self.domain, EventSeverity.WARNING
+        best_rank = -1
+        for kw, (dom, floor) in self._CRISIS.items():
+            if kw in haystack and self._ORDER.index(floor) > best_rank:
+                best_rank = self._ORDER.index(floor)
+                domain, sev = dom, floor
+        return domain, sev
+
+    def _record_to_event(self, rec: dict) -> CoordinationEvent | None:
+        groups = [g.get("name") for g in rec.get("groups", [])]
+        country = next(
+            (self.EAST_AFRICA_ISO3[g] for g in groups if g in self.EAST_AFRICA_ISO3),
+            None,
+        )
+        domain, sev = self._classify(rec)
+        return CoordinationEvent(
+            domain=domain,
+            event_type=self.event_type,
+            source=self.source,
+            severity=sev,
+            data={
+                "title": rec.get("title", ""),
+                "organization": (rec.get("organization") or {}).get("title"),
+                "country": country,
+                "updated": rec.get("metadata_modified"),
+                "url": f"https://data.humdata.org/dataset/{rec.get('name', '')}",
+                "tags": [t.get("name") for t in rec.get("tags", [])][:8],
+                "origin_feed": "hdx",
+            },
+        )
