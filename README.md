@@ -8,7 +8,7 @@ It ingests and normalizes; the bus routes. Clean separation, composable rails.
 
 ## What it does
 
-- **Adapters** for public sources — Open-Meteo rainfall (drought/flood signals), USGS earthquakes, GDACS disaster alerts — each mapping raw records to typed `CoordinationEvent`s. Add a feed by adding an adapter.
+- **Adapters** for public sources — Open-Meteo rainfall (drought/flood signals), USGS earthquakes, GDACS disaster alerts, HDX humanitarian datasets (OCHA, key-free CKAN), Kobo/ODK field reports (bottom-up ground truth) — each mapping raw records to typed `CoordinationEvent`s. Add a feed by adding an adapter.
 - **East-Africa filter** — a signal becomes an event only if it lands in the regional bounding box or names a regional country. Global noise is dropped at ingest.
 - **Offline-capable** — ships with a `SampleAdapter` over bundled fixtures, so the full pipeline (and its tests) run with no network and no API keys.
 - **Feeds the bus, doesn't replace it** — routing, cascading, and cross-border logic stay in `africa-coord-bus`.
