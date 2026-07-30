@@ -115,3 +115,111 @@ def test_openmeteo_events_cascade():
     ev = OpenMeteoAdapter(records=rec).to_events()[0]
     fired = [r.name for r in KENYA_ROUTING_TABLE if r.matches(ev)]
     assert "drought→parametric_insurance" in fired
+
+
+# --- HDX adapter (OCHA Humanitarian Data Exchange, key-free CKAN API) ---------
+from coord_ingest import HDXAdapter  # noqa: E402
+
+_HDX_FIXTURES = [
+    {  # crisis-tagged -> should lift to water/alert
+        "name": "kenya-drought-key-figures",
+        "title": "Kenya: Drought-related key figures",
+        "metadata_modified": "2026-07-27T14:08:01",
+        "organization": {"title": "Humanitarian partners"},
+        "groups": [{"name": "ken"}],
+        "tags": [{"name": "drought"}, {"name": "food security"}],
+    },
+    {  # plain dataset in EA -> civic/warning default
+        "name": "hrp-projects-uga",
+        "title": "Uganda: Response Plan projects",
+        "metadata_modified": "2026-07-27T14:08:01",
+        "organization": {"title": "OCHA HPC Tools"},
+        "groups": [{"name": "uga"}],
+        "tags": [{"name": "who is doing what and where-3w-4w-5w"}],
+    },
+    {  # outside East Africa -> country None -> dropped by region filter
+        "name": "nigeria-health-facilities",
+        "title": "Nigeria: Health facilities",
+        "metadata_modified": "2026-07-20T00:00:00",
+        "organization": {"title": "WHO"},
+        "groups": [{"name": "nga"}],
+        "tags": [{"name": "health facilities"}],
+    },
+]
+
+
+def test_hdx_maps_country_and_url():
+    evs = HDXAdapter(records=_HDX_FIXTURES).to_events()
+    assert len(evs) == 3
+    ke = next(e for e in evs if "Kenya" in e.data["title"])
+    assert ke.data["country"] == "Kenya"
+    assert ke.data["url"] == "https://data.humdata.org/dataset/kenya-drought-key-figures"
+    assert ke.data["origin_feed"] == "hdx"
+
+
+def test_hdx_crisis_tags_lift_domain_and_severity():
+    ke = HDXAdapter(records=_HDX_FIXTURES[:1]).to_events()[0]
+    assert ke.domain == EventDomain.WATER          # drought -> water
+    assert ke.severity == EventSeverity.ALERT      # crisis floor, above default WARNING
+
+
+def test_hdx_plain_dataset_defaults_to_civic_warning():
+    uga = HDXAdapter(records=_HDX_FIXTURES[1:2]).to_events()[0]
+    assert uga.domain == EventDomain.CIVIC
+    assert uga.severity == EventSeverity.WARNING
+
+
+def test_hdx_non_east_africa_dataset_is_dropped_by_pipeline():
+    kept = IngestPipeline([HDXAdapter(records=_HDX_FIXTURES)]).collect()
+    titles = [e.data["title"] for e in kept]
+    assert not any("Nigeria" in t for t in titles)   # nga has no EA group -> dropped
+    assert len(kept) == 2
+
+
+def test_hdx_unreachable_degrades_to_empty():
+    # bad injected path is not used; simulate network failure via a broken subclass
+    class _Broken(HDXAdapter):
+        def fetch(self):
+            raise RuntimeError("network down")
+    # to_events calls fetch(); pipeline swallows adapter errors -> empty, no crash
+    assert IngestPipeline([_Broken()]).collect() == []
+
+
+# --- Kobo/ODK field-report adapter (offline mapping tests only) ---------------
+from coord_ingest import KoboAdapter  # noqa: E402
+
+_KOBO_SUBMISSIONS = [
+    {
+        "title": "Borehole dry - Marsabit ward",
+        "_geolocation": [2.33, 37.98],          # Marsabit, Kenya (in EA bbox)
+        "_submission_time": "2026-07-27T09:00:00",
+    },
+    {
+        "title": "Test entry - Berlin",
+        "_geolocation": [52.52, 13.40],          # outside region -> dropped
+        "_submission_time": "2026-07-27T09:05:00",
+    },
+]
+
+
+def test_kobo_maps_geolocation_and_domain():
+    evs = KoboAdapter(asset_uid="aXYZ", domain=EventDomain.WATER,
+                      records=_KOBO_SUBMISSIONS).to_events()
+    assert len(evs) == 2
+    dry = evs[0]
+    assert dry.domain == EventDomain.WATER
+    assert dry.event_type == "field_report"
+    assert dry.data["lat"] == 2.33 and dry.data["lon"] == 37.98
+    assert dry.data["origin_feed"] == "kobo"
+
+
+def test_kobo_region_filter_drops_out_of_area_submissions():
+    kept = IngestPipeline([KoboAdapter(asset_uid="aXYZ", domain=EventDomain.WATER,
+                                       records=_KOBO_SUBMISSIONS)]).collect()
+    assert len(kept) == 1                        # Berlin dropped by bbox
+    assert "Marsabit" in kept[0].data["title"]
+
+
+def test_kobo_no_token_or_form_degrades_to_empty():
+    # no injected records, no asset_uid, no token -> fetch returns [] (no crash)
+    assert KoboAdapter().to_events() == []
