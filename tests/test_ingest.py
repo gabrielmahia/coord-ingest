@@ -1,7 +1,13 @@
 """Tests: adapters emit valid events, region filter works, pipeline runs offline."""
 from africa_coord_bus.event import CoordinationEvent, EventDomain, EventSeverity
-from coord_ingest import (SampleAdapter, USGSQuakeAdapter, GDACSAdapter,
-                          IngestPipeline, in_east_africa)
+
+from coord_ingest import (
+    GDACSAdapter,
+    IngestPipeline,
+    SampleAdapter,
+    USGSQuakeAdapter,
+    in_east_africa,
+)
 
 
 def test_sample_adapter_emits_events():
@@ -108,8 +114,9 @@ def test_openmeteo_normal_emits_nothing():
 
 def test_openmeteo_events_cascade():
     """A weather-derived drought must fire the real routing cascade."""
-    from coord_ingest import OpenMeteoAdapter
     from africa_coord_bus import KENYA_ROUTING_TABLE
+
+    from coord_ingest import OpenMeteoAdapter
     rec = [{"name": "Turkana", "lat": 3.1, "lon": 35.6, "country": "Kenya",
             "precip": [0, 0, 0, 0, 0, 0, 0]}]
     ev = OpenMeteoAdapter(records=rec).to_events()[0]
@@ -118,7 +125,7 @@ def test_openmeteo_events_cascade():
 
 
 # --- HDX adapter (OCHA Humanitarian Data Exchange, key-free CKAN API) ---------
-from coord_ingest import HDXAdapter  # noqa: E402
+from coord_ingest import HDXAdapter
 
 _HDX_FIXTURES = [
     {  # crisis-tagged -> should lift to water/alert
@@ -186,7 +193,7 @@ def test_hdx_unreachable_degrades_to_empty():
 
 
 # --- Kobo/ODK field-report adapter (offline mapping tests only) ---------------
-from coord_ingest import KoboAdapter  # noqa: E402
+from coord_ingest import KoboAdapter
 
 _KOBO_SUBMISSIONS = [
     {

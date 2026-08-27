@@ -7,6 +7,6 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with: { python-version: "3.11" }
-      - run: pip install -e . ruff pytest
+      - run: pip install -e . ruff==0.16.4 pytest
       - run: ruff check . --ignore E501
       - run: pytest -q
