@@ -230,3 +230,46 @@ def test_kobo_region_filter_drops_out_of_area_submissions():
 def test_kobo_no_token_or_form_degrades_to_empty():
     # no injected records, no asset_uid, no token -> fetch returns [] (no crash)
     assert KoboAdapter().to_events() == []
+
+
+# --- Google Flood Hub adapter (waitlisted API; mapping tested offline) -------
+from coord_ingest import FloodHubAdapter  # noqa: E402
+
+_FLOOD = [
+    {"gaugeId": "hybas_1120847170", "severity": "EXTREME", "qualityVerified": True,
+     "regionCode": "KE", "gaugeLocation": {"latitude": -1.09, "longitude": 36.9},
+     "forecastTrend": "RISE", "issuedTime": "2026-09-02T06:00:00Z"},
+    {"gaugeId": "hybas_1120847999", "severity": "NO_FLOODING", "qualityVerified": True,
+     "regionCode": "KE", "gaugeLocation": {"latitude": -0.5, "longitude": 37.1}},
+    {"gaugeId": "hybas_berlin", "severity": "SEVERE", "qualityVerified": True,
+     "regionCode": "DE", "gaugeLocation": {"latitude": 52.52, "longitude": 13.40}},
+]
+
+
+def test_floodhub_maps_severity_and_location():
+    evs = FloodHubAdapter(records=_FLOOD).to_events()
+    top = evs[0]
+    assert top.domain == EventDomain.WATER
+    assert top.severity == EventSeverity.CRITICAL      # EXTREME -> CRITICAL
+    assert top.data["gauge_id"] == "hybas_1120847170"
+    assert top.data["origin_feed"] == "floodhub"
+    assert top.data["quality_verified"] is True
+
+
+def test_floodhub_no_flooding_is_info_not_dropped():
+    evs = FloodHubAdapter(records=_FLOOD[1:2]).to_events()
+    assert evs[0].severity == EventSeverity.INFO       # all-clear is still signal
+
+
+def test_floodhub_region_filter_drops_out_of_area_gauges():
+    kept = IngestPipeline([FloodHubAdapter(records=_FLOOD)]).collect()
+    assert all("berlin" not in e.data["gauge_id"] for e in kept)
+
+
+def test_floodhub_defaults_to_verified_gauges_only():
+    # an unverified gauge triggering a cash transfer is worse than a missed alert
+    assert FloodHubAdapter().include_non_verified is False
+
+
+def test_floodhub_without_key_degrades_to_empty():
+    assert FloodHubAdapter().to_events() == []

@@ -479,3 +479,104 @@ class KoboAdapter(FeedAdapter):
                 "origin_feed": "kobo",
             },
         )
+
+
+class FloodHubAdapter(FeedAdapter):
+    """Google Flood Forecasting API -> riverine flood coordination events.
+
+    Google's flood models cover 40 African countries with riverine forecasts up
+    to 7 days ahead (CC BY 4.0, free of charge). The reason this matters to a
+    coordination bus rather than a dashboard is *anticipatory action*: IRC and
+    GiveDirectly used these forecasts to trigger cash transfers that reached
+    households 5-7 days BEFORE flood peaks in Nigeria, and forecast points now
+    exist in Northern Kenya where there were previously none.
+
+    That is a cascade, not a chart. A verified gauge crossing a danger threshold
+    is a water-domain signal whose value lies in what it triggers downstream —
+    finance (anticipatory transfer), health (facility pre-positioning), transport
+    (route closure). This adapter emits the signal; africa-coord-bus routes it.
+
+    ACCESS: the Flood Forecasting API is waitlisted — approval plus a Google
+    Cloud Project ID are required, and use is presently limited to
+    non-commercial purposes. Without a key this adapter degrades to empty like
+    every other adapter here, so a pipeline that includes it still runs.
+
+    VERIFICATION STATUS: mapping logic is unit-tested against the documented
+    response shape. The live network path is NOT smoke-tested in this package
+    because it requires credentials this project does not hold. Verify against
+    your own approved key before operational use.
+    """
+
+    domain = EventDomain.WATER
+    event_type = "flood_forecast"
+    source = "coord-ingest.floodhub"
+
+    API = "https://floodforecasting.googleapis.com/v1/gauges:searchLatestFloodStatusByArea"
+
+    # Google severity -> bus severity. EXTREME/SEVERE are actionable now;
+    # anything below is situational awareness, not a trigger.
+    _SEVERITY = {
+        "EXTREME": EventSeverity.CRITICAL,
+        "SEVERE": EventSeverity.ALERT,
+        "ABOVE_NORMAL": EventSeverity.WARNING,
+        "WARNING": EventSeverity.WARNING,
+        "NO_FLOODING": EventSeverity.INFO,
+    }
+
+    def __init__(self, records: list[dict] | None = None,
+                 api_key_env: str = "FLOODHUB_API_KEY",
+                 include_non_verified: bool = False):
+        self._injected = records
+        self.api_key_env = api_key_env
+        # Non-quality-verified gauges exist but carry lower confidence. Default
+        # off: an unverified gauge triggering a cash transfer is a worse failure
+        # than a missed alert, and the caller should opt in knowingly.
+        self.include_non_verified = include_non_verified
+
+    def fetch(self) -> list[dict]:
+        if self._injected is not None:
+            return self._injected
+        import os
+        import urllib.request
+
+        key = os.environ.get(self.api_key_env)
+        if not key:
+            return []  # waitlisted API, no key -> contribute nothing, break nothing
+        body = json.dumps({
+            "regionCode": "KE",
+            "includeNonQualityVerified": self.include_non_verified,
+        }).encode()
+        req = urllib.request.Request(
+            f"{self.API}?key={key}", data=body,
+            headers={"Content-Type": "application/json"})
+        try:
+            with urllib.request.urlopen(req, timeout=25) as r:
+                return json.load(r).get("floodStatuses", [])
+        except Exception:
+            return []
+
+    def _record_to_event(self, rec: dict) -> CoordinationEvent | None:
+        sev_raw = (rec.get("severity") or "NO_FLOODING").upper()
+        severity = self._SEVERITY.get(sev_raw, EventSeverity.INFO)
+        gauge = rec.get("gaugeId") or rec.get("gauge_id") or ""
+        loc = rec.get("gaugeLocation") or {}
+        verified = rec.get("qualityVerified", rec.get("quality_verified"))
+        return CoordinationEvent(
+            domain=self.domain,
+            event_type=self.event_type,
+            source=self.source,
+            severity=severity,
+            data={
+                "gauge_id": gauge,
+                "lat": loc.get("latitude"),
+                "lon": loc.get("longitude"),
+                "country": rec.get("regionCode") or rec.get("country"),
+                "severity_raw": sev_raw,
+                "quality_verified": verified,
+                "forecast_trend": rec.get("forecastTrend"),
+                "issued": rec.get("issuedTime"),
+                "origin_feed": "floodhub",
+                # anticipatory-action window: the reason this feed exists
+                "lead_time_note": "riverine forecasts up to 7 days ahead",
+            },
+        )
