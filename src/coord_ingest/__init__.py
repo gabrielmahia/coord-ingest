@@ -29,6 +29,7 @@ from __future__ import annotations
 
 from .adapters import (
     FeedAdapter,
+    FloodHubAdapter,
     GDACSAdapter,
     HDXAdapter,
     KoboAdapter,
@@ -48,6 +49,7 @@ __all__ = [
     "HDXAdapter",
     "IngestPipeline",
     "KoboAdapter",
+    "FloodHubAdapter",
     "OpenMeteoAdapter",
     "ReliefWebAdapter",
     "SampleAdapter",
