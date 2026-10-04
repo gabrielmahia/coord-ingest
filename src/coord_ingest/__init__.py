@@ -45,11 +45,11 @@ __version__ = "0.3.0"
 __all__ = [
     "EAST_AFRICA_BBOX",
     "FeedAdapter",
+    "FloodHubAdapter",
     "GDACSAdapter",
     "HDXAdapter",
     "IngestPipeline",
     "KoboAdapter",
-    "FloodHubAdapter",
     "OpenMeteoAdapter",
     "ReliefWebAdapter",
     "SampleAdapter",
