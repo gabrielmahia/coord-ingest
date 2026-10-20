@@ -13,6 +13,14 @@ license-files = ["LICENSE"]
 authors = [{name = "AfriKaziOS maintainers"}]
 keywords = ["osint","east-africa","coordination","mcp","early-warning","feeds"]
 dependencies = ["africa-coord-bus>=0.2.0"]
+classifiers = [
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Programming Language :: Python :: 3.15",
+]
 
 [project.urls]
 Homepage = "https://github.com/gabrielmahia/coord-ingest"
