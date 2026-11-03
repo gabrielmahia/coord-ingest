@@ -1,0 +1,48 @@
+name: Publish
+
+# Test, then publish to PyPI with Trusted Publishing (OIDC): no API token is stored anywhere.
+# PyPI publisher (set 2026-11-03): Owner gabrielmahia, Repository coord-ingest, Workflow publish.yml, Environment pypi.
+# To release: bump the version in pyproject.toml, merge, then push a tag:  git tag vX.Y.Z && git push origin vX.Y.Z
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Test before publish
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - run: pip install -e . pytest
+      - run: pytest -q
+
+  pypi:
+    name: Build and publish to PyPI
+    needs: test
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/p/coord-ingest
+    permissions:
+      id-token: write   # Trusted Publisher (OIDC)
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - run: pip install build && python -m build
+      - uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086  # v1.14.3 (pinned: release/v1 is a moving branch)
+        with:
+          skip-existing: true   # a re-run, or a version uploaded by hand, does not fail
