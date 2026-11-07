@@ -1,0 +1,11 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+type: software
+title: "coord-ingest"
+abstract: "Turn open world-signal feeds (quakes, disasters, outbreaks) into africa-coord-bus coordination events — East Africa scoped, MIT, no API keys."
+version: "0.4.2"
+authors:
+  - family-names: "Mahia"
+    given-names: "Gabriel"
+repository-code: "https://github.com/gabrielmahia/coord-ingest"
+license: "MIT"
